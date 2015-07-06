@@ -216,7 +216,7 @@ final class BP_XProfile_Field_For_Member_Types {
 		}
 
 		// Get the field's member types
-		if ( $member_types = $this->get_xprofile_member_types( $field_id, 'field' ) ) {
+		if ( $member_types = $this->get_xprofile_restrictions_by_type( $field_id, 'field', 'member-types' ) ) {
 
 			// Default to 'none' when the user has no member type(s)
 			if ( ! $u_member_types = bp_get_member_type( $user_id, false ) ) {
@@ -248,17 +248,32 @@ final class BP_XProfile_Field_For_Member_Types {
 	 * @param string $meta_type Type of meta, either 'field' or 'group'
 	 * @return array Field or group member type names
 	 */
-	public function get_xprofile_member_types( $object_id, $meta_type ) {
+	public function get_xprofile_restrictions( $object_id, $meta_type ) {
+		$restrictions = array();
 
 		// Get all meta instances of 'member-type' meta
-		$meta = bp_xprofile_get_meta( $object_id, $meta_type, 'member-type', false );
+		$restrictions['member-types'] = bp_xprofile_get_meta( $object_id, $meta_type, 'member-type', false );
 
-		// Sanitize meta
-		if ( empty( $meta ) ) {
-			$meta = array();
+		return apply_filters( 'bp-xprofile-field-restrictions', $restrictions, $object_id, $meta_type );
+	}
+
+	/**
+	 * Return restrictions by type
+	 *
+	 * @param $object_id
+	 * @param $meta_type
+	 * @param $restriction_type
+	 *
+	 * @return array
+	 */
+	public function get_xprofile_restrictions_by_type( $object_id, $meta_type, $restriction_type ) {
+		$restrictions = $this->get_xprofile_restrictions( $object_id, $meta_type );
+
+		if ( empty( $restrictions[ $restriction_type ] ) ) {
+			return array();
 		}
 
-		return $meta;
+		return $restrictions[ $restriction_type ];
 	}
 
 	/**
@@ -266,17 +281,19 @@ final class BP_XProfile_Field_For_Member_Types {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @uses BP_XProfile_Field_For_Member_Types::get_xprofile_member_types()
+	 * @uses BP_XProfile_Field_For_Member_Types::get_xprofile_restrictions()
 	 * @uses bp_xprofile_delete_meta()
 	 * @uses bp_xprofile_add_meta()
 	 * 
 	 * @param int $object_id Field or group ID
 	 * @param string $meta_type Type of meta, either 'field' or 'group'
-	 * @param array $selected_types Selected member type names
+	 * @param array $selected_restrictions Field restrictions
 	 * @return bool Update success or failure
 	 */
-	public function update_xprofile_member_types( $object_id, $meta_type, $selected_types ) {
-		$current_types = $this->get_xprofile_member_types( $object_id, $meta_type );
+	public function update_xprofile_member_types( $object_id, $meta_type, $selected_restrictions ) {
+
+		$current_types  = $this->get_xprofile_restrictions_by_type( $object_id, $meta_type, 'member-types' );
+		$selected_types = ( empty( $selected_restrictions['member-types'] ) ) ? array() : $selected_restrictions['member-types'];
 
 		// Delete unselected types
 		foreach ( $current_types as $type ) {
@@ -312,40 +329,53 @@ final class BP_XProfile_Field_For_Member_Types {
 		if ( 1 === (int) $field->id )
 			return;
 
-		// Bail when no member types are registered
-		if ( ! $member_types = bp_get_member_types( array(), 'objects' ) )
-			return;
+		$member_types = bp_get_member_types( array(), 'objects' );
 
-		// Get the field's member types
-		$obj_member_types = ! empty( $field->id ) ? $this->get_xprofile_member_types( $field->id, 'field' ) : array();
+		// Get the field's restrictions
+		$restrictions = ! empty( $field->id ) ? $this->get_xprofile_restrictions( $field->id, 'field' ) : array();
 
 		?>
 
 		<div id="for_member_types" class="postbox">
-			<h3><?php _e( 'Member Types', 'bp-xprofile-field-for-member-types' ); ?></h3>
+			<h3><?php _e( 'Restrictions', 'bp-xprofile-field-for-member-types' ); ?></h3>
 			<div class="inside">
-				<p class="description"><?php _e( 'To make this field exclusively available to users, select theirs from the following member types.', 'bp-xprofile-field-for-member-types' ); ?></p>
-
 				<ul>
 					<li>
 						<label>
-							<input name="member-types[]" type="checkbox" value="none" <?php checked( in_array( 'none', $obj_member_types ) ); ?>/>
+							<input name="restrictions[]" type="checkbox" value="none" <?php checked( ! (bool) array_filter( $restrictions ) ); ?> />
+							<em><?php _e( 'This field is available to all members.', 'bp-xprofile-field-for-member-types' ); ?></em>
+						</label>
+					</li>
+				</ul>
+
+				<?php do_action( 'bp-xprofile-field-restrictions-before-member-types', $restrictions ); ?>
+
+				<?php if ( ! empty( $member_types ) ) : ?>
+				<strong><?php _e( 'Restricted to the following member types:', 'bp-xprofile-field-for-member-types' ); ?></strong>
+				<ul>
+					<li>
+						<label>
+							<input name="restrictions[member-types][]" type="checkbox" value="none" <?php checked( in_array( 'none', $restrictions['member-types'] ) ); ?>/>
 							<em><?php _e( 'No member type', 'bp-xprofile-field-for-member-types' ); ?></em>
 						</label>
 					</li>
 
-					<?php foreach ( $member_types as $member_type ) : ?>
+					<?php foreach ( (array) $member_types as $member_type ) : ?>
 					<li>
 						<label>
-							<input name="member-types[]" type="checkbox" value="<?php echo $member_type->name; ?>" <?php checked( in_array( $member_type->name, $obj_member_types ) ); ?>/>
+							<input name="restrictions[member-types][]" type="checkbox" value="<?php echo $member_type->name; ?>" <?php checked( in_array( $member_type->name, $restrictions['member-types'] ) ); ?>/>
 							<?php echo $member_type->labels['singular_name']; ?>
 						</label>
 					</li>
 					<?php endforeach; ?>
 				</ul>
+				<?php endif; ?>
+
+				<?php do_action( 'bp-xprofile-field-restrictions-after-member-types', $restrictions ); ?>
+
 			</div>
 
-			<?php wp_nonce_field( 'member-types', '_wpnonce_for_member_types' ); ?>
+			<?php wp_nonce_field( 'save-field-restrictions', '_wpnonce_for_restriction' ); ?>
 		</div>
 
 		<?php
@@ -363,7 +393,7 @@ final class BP_XProfile_Field_For_Member_Types {
 	public function field_save_member_type_metabox( $field ) {
 
 		// Bail when nonce does not verify
-		if ( ! isset( $_REQUEST['_wpnonce_for_member_types'] ) || ! wp_verify_nonce( $_REQUEST['_wpnonce_for_member_types'], 'member-types' ) )
+		if ( ! isset( $_REQUEST['_wpnonce_for_restriction'] ) || ! wp_verify_nonce( $_REQUEST['_wpnonce_for_restriction'], 'save-field-restrictions' ) )
 			return;
 
 		/**
@@ -376,10 +406,16 @@ final class BP_XProfile_Field_For_Member_Types {
 		}
 
 		// Get posted values
-		$member_types = isset( $_REQUEST['member-types'] ) ? (array) $_REQUEST['member-types'] : array();
+		$restrictions = isset( $_REQUEST['restrictions'] ) ? (array) $_REQUEST['restrictions'] : array();
+
+		if ( false !== array_search( 'none', $restrictions ) ) {
+			$restrictions = array();
+		}
 
 		// Update changes
-		$this->update_xprofile_member_types( $field->id, 'field', $member_types );
+		$this->update_xprofile_member_types( $field->id, 'field', $restrictions );
+
+		do_action( 'bp-xprofile-field-save-restrictions', $field->id, $restrictions );
 	}
 
 	/** Admin: Profile Fields *************************************************/
@@ -389,14 +425,14 @@ final class BP_XProfile_Field_For_Member_Types {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @uses BP_XProfile_Field_For_Member_Types::get_xprofile_member_types()
+	 * @uses BP_XProfile_Field_For_Member_Types::get_xprofile_restrictions()
 	 * @uses bp_get_meber_types()
 	 * @param BP_XProfile_Field $field Field object
 	 */
 	public function admin_field_legend( $field ) {
 
 		// Bail when the field has no member types
-		if ( ! $member_types = $this->get_xprofile_member_types( $field->id, 'field' ) )
+		if ( ! $member_types = $this->get_xprofile_restrictions_by_type( $field->id, 'field', 'member-types' ) )
 			return;
 
 		// Get selected type labels
